@@ -117,7 +117,7 @@ fn parse_quoted_expr(text: &str, mut current_word: String) -> Option<(&str, Stri
     match chars.next()? {
         '\\' => {
             offset += 1;
-            let c = match chars.next()? {
+            match chars.next()? {
                 '\\' => current_word.push('\\'),
                 '\n' => { },
                 '"' => current_word.push('"'),
