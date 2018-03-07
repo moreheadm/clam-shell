@@ -1,0 +1,6 @@
+[package]
+name = "clam-shell"
+version = "0.1.0"
+authors = ["Max Morehead <20051670+moreheadm@users.noreply.github.com>"]
+
+[dependencies]
