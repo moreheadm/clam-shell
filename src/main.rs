@@ -5,17 +5,35 @@ use std::io::BufRead;
 fn main() {
     let stdin = io::stdin();
     
+    let mut text = String::new();
     for line_result in stdin.lock().lines() {
-        let mut line = match line_result {
+        let line = match line_result {
             Ok(l) => l,
             Err(err) => panic!(err),
         };
+        text.push_str(line.as_str());
+        text.push('\n');
         
-        line.push('\n');
-        let (rest, words) = parse_sentence(line.as_str(), Vec::new());
-        for ref word in &words {
-            println!("{}", word);
+        let text_clone = text.clone();
+        let mut text_slice = text_clone.as_str();
+
+        while !text_slice.is_empty() {
+            match parse_sentence(text_slice, Vec::new()) {
+                Some((rest, command)) => {
+                    text_slice = rest;
+                    run_command(&command);
+                },
+                None => { break; },
+            }
         }
+        
+        text = text_slice.to_string();
+    }
+}
+
+fn run_command(command: &Vec<String>) {
+    for ref word in command {
+        println!("{}", word);
     }
 }
 
@@ -27,69 +45,63 @@ enum CmdChar {
     Cmd(Command),
     Char(char),
 }
-
+/*
 /// What we were parsing at the end of the line
 enum LineBreak {
     SingleQuote(String),
     DoubleQuote(String),
     Variable(String),
     Command,
-}
+}*/
 
 type CmdString = Vec<CmdChar>;
 
-fn parse_sentence(text: &str, mut current_sentence: Vec<String>) -> (&str, Vec<String>) {
-    if text.is_empty() { panic!(); }
-    
-    match text.chars().next().unwrap() {
-        '\n' => { return (&text[1..], current_sentence); },
+fn parse_sentence(text: &str, mut current_sentence: Vec<String>) -> Option<(&str, Vec<String>)> {
+    match text.chars().next()? {
+        '\n' => { return Some((&text[1..], current_sentence)); },
         ' ' => parse_sentence(&text[1..], current_sentence),
         _ => {
-            let (new_text, word) = parse_word(text, String::new());
+            let (new_text, word) = parse_word(text, String::new())?;
             current_sentence.push(word);
             parse_sentence(new_text, current_sentence)
         }
     }
 }
 
-fn parse_word(text: &str, mut current_word: String) -> (&str, String) {
-    if text.is_empty() { panic!(); }
-    
+fn parse_word(text: &str, mut current_word: String) -> Option<(&str, String)> {
     let mut chars = text.chars();
     
-    let rest = match chars.next().unwrap() {
+    let rest = match chars.next()? {
         '\'' => parse_single_quoted_expr(&text[1..], current_word),
         '\\' => {
-            current_word.push(chars.next().unwrap());
-            (&text[2..], current_word)
+            current_word.push(chars.next()?);
+            Some((&text[2..], current_word))
         },
         '"' => parse_quoted_expr(&text[1..], current_word),
-        ' ' => { return (text, current_word); },
-        '\n' => { return (text, current_word); },
+        ' ' => { return Some((text, current_word)); },
+        '\n' => { return Some((text, current_word)); },
         '$' => parse_variable(&text[1..], current_word),
         '#' => parse_comment(&text[1..], current_word),
         c => {
             current_word.push(c);
-            (&text[1..], current_word)
+            Some((&text[1..], current_word))
         },
-    };
+    }?;
 
     parse_word(rest.0, rest.1)
 }
 
-fn parse_comment(text: &str, current_word: String) -> (&str, String) {
-    match text.chars().next().unwrap() {
-        '\n' => (text, current_word),
-        ' ' => (text, current_word),
+fn parse_comment(text: &str, current_word: String) -> Option<(&str, String)> {
+    match text.chars().next()? {
+        '\n' => Some((text, current_word)),
+        ' ' => Some((text, current_word)),
         _ => parse_comment(&text[1..], current_word),
     }
 }
 
-fn parse_single_quoted_expr(text: &str, mut current_word: String) -> (&str, String) {
-    if text.is_empty() { panic!(); }
-
-    match text.chars().next().unwrap() {
-        '\'' => (&text[1..], current_word),
+fn parse_single_quoted_expr(text: &str, mut current_word: String) -> Option<(&str, String)> {
+    match text.chars().next()? {
+        '\'' => Some((&text[1..], current_word)),
         c => {
             current_word.push(c);
             parse_single_quoted_expr(&text[1..], current_word)
@@ -97,32 +109,27 @@ fn parse_single_quoted_expr(text: &str, mut current_word: String) -> (&str, Stri
     }
 }
 
-fn parse_quoted_expr(text: &str, mut current_word: String) -> (&str, String) {
-    if text.is_empty() { panic!(); }
-    
+fn parse_quoted_expr(text: &str, mut current_word: String) -> Option<(&str, String)> {
     let mut chars = text.chars();
 
     let mut offset = 1;
 
-    match chars.next().unwrap() {
+    match chars.next()? {
         '\\' => {
-            if text.is_empty() { panic!(); }
-            
             offset += 1;
-            let c = match chars.next().unwrap() {
-                '\\' => '\\',
-                '\n' => '\n',
-                '"' => '"',
-                '$' => '$',
-                '`' => '`',
+            let c = match chars.next()? {
+                '\\' => current_word.push('\\'),
+                '\n' => { },
+                '"' => current_word.push('"'),
+                '$' => current_word.push('$'),
+                '`' => current_word.push('`'),
                 c => {
                     current_word.push('\\');
-                    c
+                    current_word.push(c)     
                 },
             };
-            current_word.push(c)     
         },
-        '"' => { return (&text[offset..], current_word); },
+        '"' => { return Some((&text[offset..], current_word)); },
 
         c => current_word.push(c),
     }
@@ -131,8 +138,8 @@ fn parse_quoted_expr(text: &str, mut current_word: String) -> (&str, String) {
 }
 
 
-fn parse_variable(text: &str, current_word: String) -> (&str, String) {
-    (text, current_word)
+fn parse_variable(text: &str, current_word: String) -> Option<(&str, String)> {
+    Some((text, current_word))
 }
 
 
