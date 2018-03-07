@@ -1,5 +1,22 @@
-fn main() {
+use std::io;
+use std::io::Read;
+use std::io::BufRead;
 
+fn main() {
+    let stdin = io::stdin();
+    
+    for line_result in stdin.lock().lines() {
+        let mut line = match line_result {
+            Ok(l) => l,
+            Err(err) => panic!(err),
+        };
+        
+        line.push('\n');
+        let (rest, words) = parse_sentence(line.as_str(), Vec::new());
+        for ref word in &words {
+            println!("{}", word);
+        }
+    }
 }
 
 enum Command {
@@ -10,6 +27,16 @@ enum CmdChar {
     Cmd(Command),
     Char(char),
 }
+
+/// What we were parsing at the end of the line
+enum LineBreak {
+    SingleQuote(String),
+    DoubleQuote(String),
+    Variable(String),
+    Command,
+}
+
+type CmdString = Vec<CmdChar>;
 
 fn parse_sentence(text: &str, mut current_sentence: Vec<String>) -> (&str, Vec<String>) {
     if text.is_empty() { panic!(); }
@@ -38,7 +65,9 @@ fn parse_word(text: &str, mut current_word: String) -> (&str, String) {
         },
         '"' => parse_quoted_expr(&text[1..], current_word),
         ' ' => { return (text, current_word); },
+        '\n' => { return (text, current_word); },
         '$' => parse_variable(&text[1..], current_word),
+        '#' => parse_comment(&text[1..], current_word),
         c => {
             current_word.push(c);
             (&text[1..], current_word)
@@ -46,6 +75,14 @@ fn parse_word(text: &str, mut current_word: String) -> (&str, String) {
     };
 
     parse_word(rest.0, rest.1)
+}
+
+fn parse_comment(text: &str, current_word: String) -> (&str, String) {
+    match text.chars().next().unwrap() {
+        '\n' => (text, current_word),
+        ' ' => (text, current_word),
+        _ => parse_comment(&text[1..], current_word),
+    }
 }
 
 fn parse_single_quoted_expr(text: &str, mut current_word: String) -> (&str, String) {
