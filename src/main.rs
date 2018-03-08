@@ -145,7 +145,10 @@ fn parse_word(text: &str, mut current_word: String) -> Option<(&str, String)> {
     let rest = match chars.next()? {
         '\'' => parse_single_quoted_expr(&text[1..], current_word),
         '\\' => {
-            current_word.push(chars.next()?);
+            let c = chars.next()?;
+            if c != '\n' {
+                current_word.push(c);
+            }
             Some((&text[2..], current_word))
         },
         '"' => parse_quoted_expr(&text[1..], current_word),
