@@ -1,5 +1,6 @@
+extern crate libc;
+
 use std::io;
-use std::io::Read;
 use std::io::BufRead;
 
 fn main() {
@@ -21,7 +22,7 @@ fn main() {
             match parse_sentence(text_slice, Vec::new()) {
                 Some((rest, command)) => {
                     text_slice = rest;
-                    run_command(&command);
+                    command::run_command(&command);
                 },
                 None => { break; },
             }
@@ -31,9 +32,79 @@ fn main() {
     }
 }
 
-fn run_command(command: &Vec<String>) {
-    for ref word in command {
-        println!("{}", word);
+mod command {
+    use libc::*;
+    use std::ffi::CString;
+    use std::ptr::null;
+
+    fn vec_to_c_str_ptr(command: &Vec<String>) -> (Vec<CString>, Vec<*const c_char>) {
+        let mut owned_strings: Vec<CString> = Vec::with_capacity(command.len());
+        let mut str_vec: Vec<*const c_char> = Vec::with_capacity(command.len() + 1);
+
+        for ref word in command {
+            let c_string = CString::new(word.as_str()).unwrap();
+            let s_ptr = c_string.as_ptr();
+
+            owned_strings.push(c_string);
+            str_vec.push(s_ptr);
+        }
+
+        str_vec.push(null());
+        (owned_strings, str_vec)
+    }
+
+    pub fn builtin_cd(command: &Vec<String>) {
+        if command.len() <= 1 {
+            eprintln!("cd requires an argument");
+        } else {
+            let dir = &command[1];
+            unsafe {
+                if chdir(CString::new(dir.as_str()).unwrap().as_ptr()) != 0 {
+                    eprintln!("Error running cd");
+                }
+            }
+        }
+    }
+
+    pub fn run_builtin(command: &Vec<String>) {
+
+    }
+
+    pub fn run_file(command: &Vec<String>) {
+        unsafe {
+            let (_owned_strs, argv_vec) = vec_to_c_str_ptr(command);
+            let argv: *const *const c_char = argv_vec.as_ptr();
+            let cmd: *const c_char = *argv;
+
+            let pid = fork();
+
+            if pid == 0 {
+                // child process
+                if execvp(cmd, argv) < 0 {
+                    panic!("Fatal error: exec returned")
+                }
+            } else if pid < 0 {
+                // error
+                panic!("Fatar error with fork")
+            } else {
+                // parent process
+                let mut status: c_int = 0;
+                loop {
+                    waitpid(pid, &mut status as *mut c_int, WUNTRACED);
+                    if WIFEXITED(status) || WIFSIGNALED(status) { break; }
+                }
+            }
+        }
+    }
+
+    pub fn run_command(command: &Vec<String>) {
+        if command.is_empty() { return; }
+
+        if command[0] == "cd" {
+            builtin_cd(command);
+        } else {
+            run_file(command);
+        }
     }
 }
 
@@ -80,7 +151,7 @@ fn parse_word(text: &str, mut current_word: String) -> Option<(&str, String)> {
         '"' => parse_quoted_expr(&text[1..], current_word),
         ' ' => { return Some((text, current_word)); },
         '\n' => { return Some((text, current_word)); },
-        '$' => parse_variable(&text[1..], current_word),
+        '$' => parse_dollar_expr(&text[1..], current_word),
         '#' => parse_comment(&text[1..], current_word),
         c => {
             current_word.push(c);
@@ -125,11 +196,12 @@ fn parse_quoted_expr(text: &str, mut current_word: String) -> Option<(&str, Stri
                 '`' => current_word.push('`'),
                 c => {
                     current_word.push('\\');
-                    current_word.push(c)     
+                    current_word.push(c)
                 },
             };
         },
         '"' => { return Some((&text[offset..], current_word)); },
+        '$' => parse_dollar_expr(&text[offset..], current_word),
 
         c => current_word.push(c),
     }
@@ -138,8 +210,22 @@ fn parse_quoted_expr(text: &str, mut current_word: String) -> Option<(&str, Stri
 }
 
 
-fn parse_variable(text: &str, current_word: String) -> Option<(&str, String)> {
-    Some((text, current_word))
+fn parse_dollar_expr(text: &str, current_word: String) -> Option<(&str, String)> {
+    let mut chars = text.chars();
+
+    match chars.next()? {
+        '(' => parse_dollar_paren_expr(text[1..], current_word),
+        '{' => parse_bracketed_variable(&text[1..], current_word),
+        _ => parse_normal_variable(text, current_word),
+    }
+}
+
+fn parse_dollar_paren_expr(text: &str, current_word: String) -> Options<(&str, String)> {
+    let mut chars = text.chars();
+
+    match chars.next()? {
+        '(' => parse_arithmetic_expr
+    }
 }
 
 
@@ -149,15 +235,25 @@ mod tests {
 
     #[test]
     fn test_parse_quoted_expr() {
-        let (_, result) = parse_quoted_expr("abc\\d\"", String::new());
+        let (_, result) = parse_quoted_expr("abc\\d\"", String::new()).unwrap();
         assert_eq!("abc\\d", result.as_str());
         
-        let (_, result) = parse_quoted_expr("abc\\\"\"", String::new());
+        let (_, result) = parse_quoted_expr("abc\\\"\"", String::new()).unwrap();
         assert_eq!("abc\"", result.as_str());
         
-        let (_, result) = parse_quoted_expr("abc\\$\"", String::new());
+        let (_, result) = parse_quoted_expr("abc\\$\"", String::new()).unwrap();
         assert_eq!("abc$", result.as_str());
-        let (_, result) = parse_quoted_expr("abc\\$\"", result);
+        let (_, result) = parse_quoted_expr("abc\\$\"", result).unwrap();
         assert_eq!("abc$abc$", result.as_str());
+    }
+
+    #[test]
+    fn test_parse_single_quoted_expr() {
+        let (_, result) = parse_single_quoted_expr("abc\\'", String::new()).unwrap();
+        assert_eq!("abc\\", result.as_str());
+
+        let (_, result) = parse_single_quoted_expr("abc\n'", result).unwrap();
+        assert_eq!("abc\\abc\n", result.as_str());
+
     }
 }
