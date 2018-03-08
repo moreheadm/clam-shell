@@ -201,15 +201,17 @@ fn parse_quoted_expr(text: &str, mut current_word: String) -> Option<(&str, Stri
             };
         },
         '"' => { return Some((&text[offset..], current_word)); },
-        '$' => parse_dollar_expr(&text[offset..], current_word),
-
+        //'$' => { parse_dollar_expr(&text[offset..], current_word); }, 
         c => current_word.push(c),
     }
     
     parse_quoted_expr(&text[offset..], current_word)
 }
 
-
+fn parse_dollar_expr(text: &str, current_word: String) -> Option<(&str, String)> {
+    Some((text, current_word))
+}
+/*
 fn parse_dollar_expr(text: &str, current_word: String) -> Option<(&str, String)> {
     let mut chars = text.chars();
 
@@ -226,7 +228,7 @@ fn parse_dollar_paren_expr(text: &str, current_word: String) -> Options<(&str, S
     match chars.next()? {
         '(' => parse_arithmetic_expr
     }
-}
+}*/
 
 
 #[cfg(test)]
