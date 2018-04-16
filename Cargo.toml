@@ -1,7 +1,8 @@
 [package]
-name = "clam-shell"
+name = "nut-shell"
 version = "0.1.0"
 authors = ["Max Morehead <20051670+moreheadm@users.noreply.github.com>"]
 
 [dependencies]
 libc = "0.2"
+liner = "0.4"
