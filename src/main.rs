@@ -214,7 +214,8 @@ fn parse_quoted_expr(text: &str, mut current_word: String) -> Option<(&str, Stri
 fn parse_dollar_expr(text: &str, current_word: String) -> Option<(&str, String)> {
     Some((text, current_word))
 }
-/*
+
+
 fn parse_dollar_expr(text: &str, current_word: String) -> Option<(&str, String)> {
     let mut chars = text.chars();
 
@@ -225,13 +226,22 @@ fn parse_dollar_expr(text: &str, current_word: String) -> Option<(&str, String)>
     }
 }
 
-fn parse_dollar_paren_expr(text: &str, current_word: String) -> Options<(&str, String)> {
+fn parse_dollar_paren_expr(text: &str, current_word: String) -> Option<(&str, String)> {
     let mut chars = text.chars();
 
     match chars.next()? {
-        '(' => parse_arithmetic_expr
+        '(' => parse_arithmetic_expr(&text[1..], current_word),
+        _ => parse_paren_subcommand(text, current_word),
     }
-}*/
+}
+
+fn parse_bracketed_variable(text: &str, current_word: String) -> Option<(&str, String)> {
+    let mut chars = text.chars();
+
+    match chars.next()? {
+
+    }
+}
 
 
 #[cfg(test)]
