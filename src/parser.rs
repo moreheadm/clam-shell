@@ -1,5 +1,6 @@
 
 
+#[derive(Debug, PartialEq)]
 pub enum ParseOp {
     And,
     Or,
@@ -7,28 +8,33 @@ pub enum ParseOp {
 }
 
 // TODO: refactor, with Success(T, &str)
+#[derive(Debug, PartialEq)]
 pub enum ParseRes<T> {
     Success(T),
     Incomplete,
     Invalid(String),
 }
 
+#[derive(Debug, PartialEq)]
 pub enum Parsed {
     Sentence(Vec<String>),
     Expr(Box<Parsed>, Box<Parsed>, ParseOp),
 }
 
+#[derive(Debug, PartialEq)]
 enum DQToken {
     Str(String),
     Exp(ExpToken),
 }
 
+#[derive(Debug, PartialEq)]
 enum ExpToken {
     Command(Vec<Token>),
     Param(String),
     Arith(String)
 }
 
+#[derive(Debug, PartialEq)]
 enum Token {
     Unquoted(String),
     Expansion(ExpToken),
@@ -139,7 +145,7 @@ fn to_parsed_form(ast: Vec<Vec<Token>>) -> ParseRes<Parsed> {
     ParseRes::Success(Parsed::Sentence(sentence))
 }
 
-
+// TODO: DRY
 fn parse_unquoted(text: &str, mut curr_expr: String, mut tokens: Vec<Token>, sub: bool)
                   -> (ParseRes<Vec<Token>>, &str) {
     use self::Token::*;
@@ -242,44 +248,7 @@ fn parse_comment(text: &str) -> &str {
         None => text,
     }
 }
-/*
-fn parse_single_quoted_expr(text: &str, mut current_word: String) -> Option<(&str, String)> {
-    match text.chars().next()? {
-        '\'' => Some((&text[1..], current_word)),
-        c => {
-            current_word.push(c);
-            parse_single_quoted_expr(&text[1..], current_word)
-        },
-    }
-}
 
-fn parse_quoted_expr(text: &str, mut current_word: String) -> Option<(&str, String)> {
-    let mut chars = text.chars();
-
-    let mut offset = 1;
-
-    match chars.next()? {
-        '\\' => {
-            offset += 1;
-            match chars.next()? {
-                '\\' => current_word.push('\\'),
-                '\n' => { },
-                '"' => current_word.push('"'),
-                '$' => current_word.push('$'),
-                '`' => current_word.push('`'),
-                c => {
-                    current_word.push('\\');
-                    current_word.push(c)
-                },
-            };
-        },
-        '"' => { return Some((&text[offset..], current_word)); },
-        //'$' => { parse_dollar_expr(&text[offset..], current_word); }, 
-        c => current_word.push(c),
-    }
-    
-    parse_quoted_expr(&text[offset..], current_word)
-}*/
 fn parse_single_quoted_expr(text: &str, mut curr_expr: String) -> (ParseRes<Token>, &str) {
     match text.chars().next() {
         Some(c) => match c {
@@ -400,7 +369,53 @@ fn parse_bracketed_param(text: &str, mut curr_expr: String) -> (ParseRes<Token>,
     (ParseRes::Invalid("Parameters not yet supported.".to_owned()), text)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
 
+    // TODO: make macro
+    fn assert_succ_cmd_parse(text: &str, expected: Vec<String>) {
+        if let ParseRes::Success(Parsed::Sentence(result)) = parse_command(text) {
+            assert_eq!(expected, result);
+        }
+        else { panic!(); }
+    }
+
+    #[test]
+    fn test_parse_command() {
+        assert_succ_cmd_parse("ls --help\n", vec!["ls".to_owned(), "--help".to_owned()]);
+
+        assert_succ_cmd_parse("echo \"abc 123\"\n",
+                                vec!["echo".to_owned(), "abc 123".to_owned()]);
+    }
+
+    fn assert_succ_unq_parse(text: &str, expected: Vec<Token>) {
+        let result = parse_unquoted(text, String::new(), Vec::new(), false);
+        if let ParseRes::Success(tokens) = result.0 {
+            assert_eq!(expected, tokens);
+        } else { panic!(); }
+
+    }
+
+    #[test]
+    fn test_parse_unquoted() {
+        use super::Token::*;
+
+        assert_succ_unq_parse(
+            "ls $(pwd)\n",
+            vec![Unquoted("ls ".to_owned()),
+                 Expansion(ExpToken::Command(vec![Unquoted("pwd".to_owned())]))]
+        );
+        assert_succ_unq_parse(
+            "echo ab\\ c\"$(ls './file')\"\n",
+            vec![Unquoted("echo ab".to_owned()), Space, Unquoted("c".to_owned()),
+                 DoubleQuote(vec![DQToken::Exp(ExpToken::Command(vec![
+                     Unquoted("ls ".to_owned()), SingleQuote("./file".to_owned())
+                 ]))])]
+        )
+    }
+}
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -428,4 +443,5 @@ mod tests {
         assert_eq!("abc\\abc\n", result.as_str());
 
     }
-}
+}*/
+
