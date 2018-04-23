@@ -7,6 +7,7 @@ mod parser;
 use std::io;
 use std::io::BufRead;
 use liner::Context;
+use parser::{ParseRes, Parsed, ParseOp};
 
 fn main() {
     let stdin = io::stdin();
@@ -20,47 +21,27 @@ fn main() {
             Ok(line) => line,
             Err(_) => break,
         };
-        
+
         text.push_str(line.as_str());
         text.push('\n');
-        
-        let text_clone = text.clone();
-        let mut text_slice = text_clone.as_str();
 
-        while !text_slice.is_empty() {
-            match parser::parse_sentence(text_slice, Vec::new()) {
-                Some((rest, command)) => {
-                    text_slice = rest;
-                    execute::run_command(&command);
-                },
-                None => { break; },
-            }
+        let parsed = parser::parse_command(text.as_str());
+        match parsed {
+            ParseRes::Success(parsed) => {
+                if let Parsed::Sentence(parsed) = parsed {
+                    execute::run_command(&parsed);
+                } else {
+                    eprintln!("Combined sentences not supported");
+                }
+                text = String::new();
+            },
+            ParseRes::Invalid(err_msg) => eprintln!("Parsing error: {}", err_msg),
+            ParseRes::Incomplete => {},
         }
-        
-        text = text_slice.to_string();
     }
 }
 
-enum Command {
-    Star,
-}
 
-enum CmdChar {
-    Cmd(Command),
-    Char(char),
-    C
-}
-
-type CmdString = Vec<CmdChar>;
-
-/*
-/// What we were parsing at the end of the line
-enum LineBreak {
-    SingleQuote(String),
-    DoubleQuote(String),
-    Variable(String),
-    Command,
-}*/
 
 
 
