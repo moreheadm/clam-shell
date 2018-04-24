@@ -54,6 +54,7 @@ macro_rules! try {
     });
 }
 
+
 pub fn parse_command(text: &str) -> ParseRes<Parsed> {
     let ast = try!(parse_unquoted(text, String::new(), Vec::new(), false).0);
     process_tokens(ast)
@@ -372,76 +373,75 @@ fn parse_bracketed_param(text: &str, mut curr_expr: String) -> (ParseRes<Token>,
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // TODO: make macro
-    fn assert_succ_cmd_parse(text: &str, expected: Vec<String>) {
-        if let ParseRes::Success(Parsed::Sentence(result)) = parse_command(text) {
-            assert_eq!(expected, result);
+/*
+    macro_rules! assert_success {
+        ( $expected:expr, $result:expr, $pattern:pat ) => {
+            if let $pattern = $result {
+                assert_eq!($expected, $result);
+            } else { panic!(); }
         }
-        else { panic!(); }
+    }*/
+    // TODO: make macro
+    
+    /*macro_rules! make_assert_success {
+        ($input_type: ty, $exp_type:ty, $pattern:pat, $match:ident, $func:expr) => {
+            fn assert_success(input: $input_type, expected: $exp_type ) {
+                let result = $func(input);
+                if let $pattern = result {
+                    assert_eq!($match, expected);
+                } else {
+                    panic!();
+                }
+            }
+        }
+    }*/
+
+    macro_rules! make_assert_success {
+        ($input_type: ty, $pattern:pat, $func:expr, $({$exp_name:ident: $exp_type:ty; $res_id:ident}),*) => {
+            fn assert_success(input: $input_type, $($exp_name: $exp_type),*) {
+                let result = $func(input);
+                if let $pattern = result {
+                    $(
+                        assert_eq!($res_id, $exp_name);
+                    )*
+                } else {
+                    panic!("Result doesn't match type.");
+                }
+            }
+        }
     }
 
     #[test]
     fn test_parse_command() {
-        assert_succ_cmd_parse("ls --help\n", vec!["ls".to_owned(), "--help".to_owned()]);
+        make_assert_success!(&str, ParseRes::Success(Parsed::Sentence(result)), |x| parse_command(x),
+                              {expected: Vec<String>; result});
+        assert_success("ls --help\n", vec!["ls".to_owned(), "--help".to_owned()]);
 
-        assert_succ_cmd_parse("echo \"abc 123\"\n",
-                                vec!["echo".to_owned(), "abc 123".to_owned()]);
+        assert_success("echo \"abc 123\"\n",
+                        vec!["echo".to_owned(), "abc 123".to_owned()]);
     }
 
-    fn assert_succ_unq_parse(text: &str, expected: Vec<Token>) {
-        let result = parse_unquoted(text, String::new(), Vec::new(), false);
-        if let ParseRes::Success(tokens) = result.0 {
-            assert_eq!(expected, tokens);
-        } else { panic!(); }
-
-    }
 
     #[test]
     fn test_parse_unquoted() {
         use super::Token::*;
 
-        assert_succ_unq_parse(
+        make_assert_success!(&str, (ParseRes::Success(tokens), text),
+                             |x| parse_unquoted(x, String::new(), Vec::new(), false),
+                             {ast: Vec<Token>; tokens}
+                            );
+        assert_success(
             "ls $(pwd)\n",
             vec![Unquoted("ls ".to_owned()),
                  Expansion(ExpToken::Command(vec![Unquoted("pwd".to_owned())]))]
         );
-        assert_succ_unq_parse(
+        assert_success(
             "echo ab\\ c\"$(ls './file')\"\n",
             vec![Unquoted("echo ab".to_owned()), Space, Unquoted("c".to_owned()),
                  DoubleQuote(vec![DQToken::Exp(ExpToken::Command(vec![
                      Unquoted("ls ".to_owned()), SingleQuote("./file".to_owned())
                  ]))])]
-        )
+        );
     }
+
 }
-/*
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_quoted_expr() {
-        let (_, result) = parse_quoted_expr("abc\\d\"", String::new()).unwrap();
-        assert_eq!("abc\\d", result.as_str());
-        
-        let (_, result) = parse_quoted_expr("abc\\\"\"", String::new()).unwrap();
-        assert_eq!("abc\"", result.as_str());
-        
-        let (_, result) = parse_quoted_expr("abc\\$\"", String::new()).unwrap();
-        assert_eq!("abc$", result.as_str());
-        let (_, result) = parse_quoted_expr("abc\\$\"", result).unwrap();
-        assert_eq!("abc$abc$", result.as_str());
-    }
-
-    #[test]
-    fn test_parse_single_quoted_expr() {
-        let (_, result) = parse_single_quoted_expr("abc\\'", String::new()).unwrap();
-        assert_eq!("abc\\", result.as_str());
-
-        let (_, result) = parse_single_quoted_expr("abc\n'", result).unwrap();
-        assert_eq!("abc\\abc\n", result.as_str());
-
-    }
-}*/
-
