@@ -56,7 +56,7 @@ macro_rules! try {
 
 
 pub fn parse_command(text: &str) -> ParseRes<Parsed> {
-    let ast = try!(parse_unquoted(text, String::new(), Vec::new(), false).0);
+    let ast = try!(parse_unquoted(text, String::new(), Vec::new(), false)).0;
     process_tokens(ast)
 }
 
@@ -67,8 +67,51 @@ fn process_tokens(ast: Vec<Token>) -> ParseRes<Parsed> {
     to_parsed_form(ast)
 }
 
+fn process_and_exec(ast: Vec<Token>) -> ParseRes<String> {
+    let parsed = try!(process_tokens(ast));
+    ParseRes::Invalid("Unimplemented".to_owned())
+}
+
+fn expand_param(param: String) -> ParseRes<String> {
+    ParseRes::Invalid("Unimplemented".to_owned())
+}
+
+fn expand_arith(expr: String) -> ParseRes<String> {
+    ParseRes::Invalid("Unimplemented".to_owned())
+}
+
 fn expr_expansion(ast: Vec<Token>) -> ParseRes<Vec<Token>> {
-    ParseRes::Success(ast)
+    // TODO: tilde expansion
+    let mut vec = Vec::new();
+
+    for token in ast {
+        match token {
+            Token::Expansion(exp_tok) => {
+                let str_res = match exp_tok {
+                    ExpToken::Command(tokens) => try!(process_and_exec(tokens)),
+                    ExpToken::Param(param) => try!(expand_param(param)),
+                    ExpToken::Arith(expr) => try!(expand_arith(expr)),
+                };
+                vec.push(Token::Unquoted(str_res));
+            },
+            _ => vec.push(token),
+        }
+    }
+    /*
+    for ref mut token in &mut ast {
+        if let &mut &mut Token::Expansion(ref exp_tok) = token {
+            let exp_tok: ExpToken = (*exp_tok).clone();
+
+            let str_res = match exp_tok {
+                ExpToken::Command(tokens) => try!(process_and_exec(tokens)),
+                ExpToken::Param(param) => try!(expand_param(param)),
+                ExpToken::Arith(expr) => try!(expand_arith(expr)),
+            };
+            **token = Token::Unquoted(str_res);
+        }
+    }*/
+
+    ParseRes::Success(vec)
 }
 
 fn field_splitting(ast: Vec<Token>) -> ParseRes<Vec<Vec<Token>>> {
@@ -78,6 +121,7 @@ fn field_splitting(ast: Vec<Token>) -> ParseRes<Vec<Vec<Token>>> {
     let mut current = Vec::new();
 
     let mut s = String::new();
+
     for token in ast {
         match token {
             Unquoted(string) => {
@@ -148,7 +192,7 @@ fn to_parsed_form(ast: Vec<Vec<Token>>) -> ParseRes<Parsed> {
 
 // TODO: DRY
 fn parse_unquoted(text: &str, mut curr_expr: String, mut tokens: Vec<Token>, sub: bool)
-                  -> (ParseRes<Vec<Token>>, &str) {
+                  -> ParseRes<(Vec<Token>, &str)> {
     use self::Token::*;
     let mut chars = text.chars();
 
@@ -156,43 +200,28 @@ fn parse_unquoted(text: &str, mut curr_expr: String, mut tokens: Vec<Token>, sub
         Some(next_char) => match next_char {
             '\n' => {
                 if curr_expr.len() > 0 { tokens.push(Unquoted(curr_expr)); }
-                (ParseRes::Success(tokens), &text[1..])
+                ParseRes::Success( (tokens, &text[1..]) )
             },
             '\'' => {
                 if curr_expr.len() > 0 { tokens.push(Unquoted(curr_expr)); }
-                let (result, rest) = parse_single_quoted_expr(&text[1..], String::new());
-                tokens.push(
-                    match result {
-                        ParseRes::Success(sq_tok) => sq_tok,
-                        ParseRes::Incomplete => return (ParseRes::Incomplete, text),
-                        ParseRes::Invalid(err) => return (ParseRes::Invalid(err), text),
-                    }
-                );
+                let (result, rest) = try!(parse_single_quoted_expr(&text[1..], String::new()));
+                tokens.push(result);
+
                 parse_unquoted(rest, String::new(), tokens, sub)
             },
             '"' => {
                 if curr_expr.len() > 0 { tokens.push(Unquoted(curr_expr)); }
-                let (result, rest) = parse_double_quoted_expr(
-                        &text[1..], String::new(), Vec::new());
-                tokens.push(
-                    match result {
-                        ParseRes::Success(dq_tok) => dq_tok,
-                        ParseRes::Incomplete => return (ParseRes::Incomplete, text),
-                        ParseRes::Invalid(err) => return (ParseRes::Invalid(err), text),
-                    }
-                );
+                let (result, rest) = try!(parse_double_quoted_expr(
+                        &text[1..], String::new(), Vec::new()));
+                tokens.push(result);
+
                 parse_unquoted(rest, String::new(), tokens, sub)
             },
             '$' => {
                 if curr_expr.len() > 0 { tokens.push(Unquoted(curr_expr)); }
-                let (result, rest) = parse_dollar_expr(&text[1..]);
-                tokens.push(
-                    match result {
-                        ParseRes::Success(tok) => tok,
-                        ParseRes::Incomplete => return (ParseRes::Incomplete, text),
-                        ParseRes::Invalid(err) => return (ParseRes::Invalid(err), text),
-                    }
-                );
+                let (result, rest) = try!(parse_dollar_expr(&text[1..]));
+                tokens.push(result);
+
                 parse_unquoted(rest, String::new(), tokens, sub)
             },
             '#' => {
@@ -213,7 +242,7 @@ fn parse_unquoted(text: &str, mut curr_expr: String, mut tokens: Vec<Token>, sub
                         parse_unquoted(&text[2..], curr_expr, tokens, sub)
                     },
                 },
-                None => (ParseRes::Incomplete, text)
+                None => ParseRes::Incomplete,
             },
             '*' => {
                 if curr_expr.len() > 0 { tokens.push(Unquoted(curr_expr)); }
@@ -228,15 +257,15 @@ fn parse_unquoted(text: &str, mut curr_expr: String, mut tokens: Vec<Token>, sub
             ')' => {
                 if sub {
                     if curr_expr.len() > 0 { tokens.push(Unquoted(curr_expr)); }
-                    (ParseRes::Success(tokens), &text[1..])
-                } else { (ParseRes::Invalid("Unexpected ')'".to_owned()), text) }
+                    ParseRes::Success( (tokens, &text[1..]) )
+                } else { ParseRes::Invalid("Unexpected ')'".to_owned()) }
             },
             c => {
                 curr_expr.push(c);
                 parse_unquoted(&text[1..], curr_expr, tokens, sub)
             },
         },
-        None => (ParseRes::Incomplete, text),
+        None => ParseRes::Incomplete,
     }
 }
 
@@ -250,21 +279,21 @@ fn parse_comment(text: &str) -> &str {
     }
 }
 
-fn parse_single_quoted_expr(text: &str, mut curr_expr: String) -> (ParseRes<Token>, &str) {
+fn parse_single_quoted_expr(text: &str, mut curr_expr: String) -> ParseRes<(Token, &str)> {
     match text.chars().next() {
         Some(c) => match c {
-            '\'' => (ParseRes::Success(Token::SingleQuote(curr_expr)), &text[1..]),
+            '\'' => ParseRes::Success( (Token::SingleQuote(curr_expr), &text[1..]) ),
             c => {
                 curr_expr.push(c);
                 parse_single_quoted_expr(&text[1..], curr_expr)
             },
         },
-        None => (ParseRes::Incomplete, text),
+        None => ParseRes::Incomplete,
     }
 }
 
 fn parse_double_quoted_expr(text: &str, mut curr_expr: String, mut dq_tokens: Vec<DQToken>)
-                            -> (ParseRes<Token>, &str) {
+                            -> ParseRes<(Token, &str)> {
     let mut chars = text.chars();
 
     match chars.next() {
@@ -285,26 +314,22 @@ fn parse_double_quoted_expr(text: &str, mut curr_expr: String, mut dq_tokens: Ve
                         };
                         parse_double_quoted_expr(&text[2..], curr_expr, dq_tokens)
                     },
-                    None => (ParseRes::Incomplete, text),
+                    None => ParseRes::Incomplete,
                 }
             },
             '"' => {
                 if curr_expr.len() > 0 { dq_tokens.push(DQToken::Str(curr_expr)); }
-                (ParseRes::Success(Token::DoubleQuote(dq_tokens)), &text[1..])
+                ParseRes::Success( (Token::DoubleQuote(dq_tokens), &text[1..]) )
             },
             '$' => {
                 if curr_expr.len() > 0 { dq_tokens.push(DQToken::Str(curr_expr)); }
 
-                let (result, rest) = parse_dollar_expr(&text[1..]);
+                let (token, rest) = try!(parse_dollar_expr(&text[1..]));
                 dq_tokens.push(
-                    match result {
-                        ParseRes::Success(exp) => match exp {
-                            Token::Expansion(exp) => DQToken::Exp(exp),
-                            Token::Unquoted(string) => DQToken::Str(string),
-                            _ => return (ParseRes::Invalid("TODO: improve msg".to_owned()), text),
-                        },
-                        ParseRes::Incomplete => return (ParseRes::Incomplete, text),
-                        ParseRes::Invalid(err) => return (ParseRes::Invalid(err), text),
+                    match token {
+                        Token::Expansion(exp) => DQToken::Exp(exp),
+                        Token::Unquoted(string) => DQToken::Str(string),
+                        _ => return ParseRes::Invalid("TODO: improve msg".to_owned()),
                     }
                 );
                 parse_double_quoted_expr(rest, String::new(), dq_tokens)
@@ -314,14 +339,14 @@ fn parse_double_quoted_expr(text: &str, mut curr_expr: String, mut dq_tokens: Ve
                 parse_double_quoted_expr(&text[1..], curr_expr, dq_tokens)
             },
         },
-        None => (ParseRes::Incomplete, text),
+        None => ParseRes::Incomplete,
     }
 
 }
 
 
 
-fn parse_dollar_expr(text: &str) -> (ParseRes<Token>, &str) {
+fn parse_dollar_expr(text: &str) -> ParseRes<(Token, &str)> {
     match text.chars().next() {
         Some(c) => match c {
             '{' => {
@@ -330,74 +355,48 @@ fn parse_dollar_expr(text: &str) -> (ParseRes<Token>, &str) {
             '(' => {
                 parse_dollar_paren_expr(&text[1..])
             },
-            '\n' => (ParseRes::Success(Token::Unquoted("$".to_owned())), &text[1..]),
+            '\n' => ParseRes::Success( (Token::Unquoted("$".to_owned()), &text[1..]) ),
             _ => parse_unbracketed_param(text),
         }
-        None => (ParseRes::Incomplete, text),
+        None => ParseRes::Incomplete,
     }
 }
 
-fn parse_unbracketed_param(text: &str) -> (ParseRes<Token>, &str) {
-    (ParseRes::Invalid("Parameters not yet supported.".to_owned()), text)
+fn parse_unbracketed_param(text: &str) -> ParseRes<(Token, &str)> {
+    ParseRes::Invalid("Parameters not yet supported.".to_owned())
 }
 
-fn parse_dollar_paren_expr(text: &str) -> (ParseRes<Token>, &str) {
+fn parse_dollar_paren_expr(text: &str) -> ParseRes<(Token, &str)> {
     match text.chars().next() {
         Some(c) => match c {
             '(' => parse_arith_expr(&text[1..]),
             _ => parse_subcommand(text),
         },
-        None => (ParseRes::Incomplete, text),
+        None => ParseRes::Incomplete,
     }
 }
 
-fn parse_arith_expr(text: &str) -> (ParseRes<Token>, &str) {
-    (ParseRes::Invalid("Arithmetic expressions not yet supported.".to_owned()), text)
+fn parse_arith_expr(text: &str) -> ParseRes<(Token, &str)> {
+    ParseRes::Invalid("Arithmetic expressions not yet supported.".to_owned())
 }
 
-fn parse_subcommand(text: &str) -> (ParseRes<Token>, &str) {
-    let (result, rest) = parse_unquoted(text, String::new(), Vec::new(), true);
-    match result {
-        ParseRes::Success(tokens) => {
-            (ParseRes::Success(Token::Expansion(ExpToken::Command(tokens))), rest)
-        },
-        ParseRes::Incomplete => (ParseRes::Incomplete, text),
-        ParseRes::Invalid(err) => (ParseRes::Invalid(err), text),
-    }
+fn parse_subcommand(text: &str) -> ParseRes<(Token, &str)> {
+    let (tokens, rest) = try!(parse_unquoted(text, String::new(), Vec::new(), true));
+
+    ParseRes::Success( (Token::Expansion(ExpToken::Command(tokens)), rest) )
 }
 
-fn parse_bracketed_param(text: &str, mut curr_expr: String) -> (ParseRes<Token>, &str) {
-    (ParseRes::Invalid("Parameters not yet supported.".to_owned()), text)
+fn parse_bracketed_param(text: &str, mut curr_expr: String) -> ParseRes<(Token, &str)> {
+    ParseRes::Invalid("Parameters not yet supported.".to_owned())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-/*
-    macro_rules! assert_success {
-        ( $expected:expr, $result:expr, $pattern:pat ) => {
-            if let $pattern = $result {
-                assert_eq!($expected, $result);
-            } else { panic!(); }
-        }
-    }*/
-    // TODO: make macro
-    
-    /*macro_rules! make_assert_success {
-        ($input_type: ty, $exp_type:ty, $pattern:pat, $match:ident, $func:expr) => {
-            fn assert_success(input: $input_type, expected: $exp_type ) {
-                let result = $func(input);
-                if let $pattern = result {
-                    assert_eq!($match, expected);
-                } else {
-                    panic!();
-                }
-            }
-        }
-    }*/
 
     macro_rules! make_assert_success {
-        ($input_type: ty, $pattern:pat, $func:expr, $({$exp_name:ident: $exp_type:ty; $res_id:ident}),*) => {
+        ($input_type: ty, $pattern:pat, $func:expr,
+         $({$exp_name:ident: $exp_type:ty; $res_id:ident}),*) => {
             fn assert_success(input: $input_type, $($exp_name: $exp_type),*) {
                 let result = $func(input);
                 if let $pattern = result {
@@ -413,8 +412,8 @@ mod tests {
 
     #[test]
     fn test_parse_command() {
-        make_assert_success!(&str, ParseRes::Success(Parsed::Sentence(result)), |x| parse_command(x),
-                              {expected: Vec<String>; result});
+        make_assert_success!(&str, ParseRes::Success(Parsed::Sentence(result)),
+                             |x| parse_command(x), {expected: Vec<String>; result});
         assert_success("ls --help\n", vec!["ls".to_owned(), "--help".to_owned()]);
 
         assert_success("echo \"abc 123\"\n",
@@ -426,7 +425,7 @@ mod tests {
     fn test_parse_unquoted() {
         use super::Token::*;
 
-        make_assert_success!(&str, (ParseRes::Success(tokens), text),
+        make_assert_success!(&str, ParseRes::Success( (tokens, text) ),
                              |x| parse_unquoted(x, String::new(), Vec::new(), false),
                              {ast: Vec<Token>; tokens}
                             );
